@@ -17,7 +17,7 @@ It is available as python package on [pypi/systemctl2mqtt](https://pypi.org/p/sy
 
 ```bash
 pip install systemctl2mqtt
-systemctl2mqtt --name MySystemName --events=60 -vvvvv
+systemctl2mqtt --name MySystemName --events -vvvvv
 ```
 
 Usage
