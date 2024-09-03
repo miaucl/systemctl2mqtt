@@ -44,15 +44,15 @@ except Exception as ex:
 You can use environment variables to control the behavior.
 
 | Config | Default | Description |
-|--------|--------------|---------|-------------|
+|--------|---------|-------------|
 | `log_level` | `INFO` | Set to `DEBUG,INFO,WARN,ERROR,CRITICAL` to enable different levels of verbosity. |
 | `systemctl2mqtt_hostname` | systemctl2mqtt Hostname | The hostname of your host, if you want to overwrite it.  |
 | `homeassistant_prefix` | `homeassistant` | The prefix for Home Assistant discovery. Must be the same as `discovery_prefix` in your Home Assistant configuration. |
 | `mqtt_client_id` | `mqtt2discord` | The client id to send to the MQTT broker. |
 | `mqtt_host` | `localhost` | The MQTT broker to connect to. |
 | `mqtt_port` | `1883` | The port on the broker to connect to. |
-| `mqtt_user` | The user to send to the MQTT broker. Leave unset to disable authentication. |
-| `mqtt_password` | The password to send to the MQTT broker. Leave unset to disable authentication. |
+| `mqtt_user` | | The user to send to the MQTT broker. Leave unset to disable authentication. |
+| `mqtt_password` | | The password to send to the MQTT broker. Leave unset to disable authentication. |
 | `mqtt_timeout` | `30` | The timeout for the MQTT connection. |
 | `mqtt_topic_prefix` | `systemctl` | The MQTT topic prefix. With the default data will be published to `systemctl/<hostname>`. |
 | `mqtt_qos` | `1` | The MQTT QOS level |
