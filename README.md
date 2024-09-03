@@ -76,8 +76,8 @@ Once `systemctl2mqtt` is collecting data and publishing it to MQTT, it's rather 
 A few assumptions:
 
 - **Home Assistant is already configured to use a MQTT broker.** Setting up MQTT and HA is beyond the scope of this documentation. However, there are a lot of great tutorials on YouTube. An external broker (or as add-on) like [Mosquitto](https://mosquitto.org/) will need to be installed and the HA MQTT integration configured.
-- **The HA MQTT integration is configured to use `homeassistant` as the MQTT autodiscovery prefix.** This is the default for the integration and also the default for `linux2mqtt`. If you have changed this from the default, use the `--prefix` parameter to specify the correct one.
-- **You're not using TLS to connect to the MQTT broker.** Currently `linux2mqtt` only works with unencrypted connections. Username / password authentication can be specified with the `--username` and `--password` parameters, but TLS encryption is not yet supported.
+- **The HA MQTT integration is configured to use `homeassistant` as the MQTT autodiscovery prefix.** This is the default for the integration and also the default for `systemctl2mqtt`. If you have changed this from the default, use the `--prefix` parameter to specify the correct one.
+- **You're not using TLS to connect to the MQTT broker.** Currently `systemctl2mqtt` only works with unencrypted connections. Username / password authentication can be specified with the `--username` and `--password` parameters, but TLS encryption is not yet supported.
 
 After you start the service (binary) sensors should show up in Home Assistant immediately. Look for sensors that start with `(binary_)sensor.systemctl`. Metadata about the container will be available as attributes for events, which you can then expose using template sensors if you wish.
 
