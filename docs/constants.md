@@ -2,4 +2,4 @@
 
 View on github
 
-[Constants](https://github.com/miaucl/docker2mqtt/blob/master/docker2mqtt/const.py)
+[Constants](https://github.com/miaucl/systemctl2mqtt/blob/master/systemctl2mqtt/const.py)
