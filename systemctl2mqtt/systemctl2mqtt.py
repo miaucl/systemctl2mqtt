@@ -665,7 +665,7 @@ class Systemctl2Mqtt:
                 "value_template": '{{ value_json.state if value_json is not undefined and value_json.state is not undefined else "off" }}',
                 "payload_on": "on",
                 "payload_off": "off",
-                "icon": None,
+                "icon": "mdi:console",
                 "unit_of_measurement": None,
                 "device": self._device_definition(service_entry),
                 "device_class": "running",
