@@ -519,8 +519,9 @@ class Systemctl2Mqtt:
                                 pid = int(stat[0])
                                 service = next(
                                     (
-                                        s["name"] if s["pid"] == pid else None
+                                        s["name"]
                                         for s in self.known_event_services.values()
+                                        if s["pid"] == pid
                                     ),
                                     None,
                                 )
