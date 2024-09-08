@@ -1037,6 +1037,9 @@ def main() -> None:
     """
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__VERSION__}"
+    )
+    parser.add_argument(
         "--name",
         default=socket.gethostname(),
         help="A descriptive name for the docker being monitored (default: hostname)",
@@ -1049,6 +1052,7 @@ def main() -> None:
     parser.add_argument(
         "--port",
         default=MQTT_PORT_DEFAULT,
+        type=int,
         help="Port or IP address of the MQTT broker (default: 1883)",
     )
     parser.add_argument(
