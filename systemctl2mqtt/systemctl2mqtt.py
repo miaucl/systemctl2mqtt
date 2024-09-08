@@ -701,7 +701,7 @@ class Systemctl2Mqtt:
                     "icon": icon,
                     "payload_on": None,
                     "payload_off": None,
-                    "json_attributes_topic": None,
+                    "json_attributes_topic": stats_topic,
                     "device_class": device_class,
                     "device": self._device_definition(service_entry),
                     "qos": self.cfg["mqtt_qos"],
