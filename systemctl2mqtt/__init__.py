@@ -1,6 +1,6 @@
 """systemctl2mqtt package."""
 
-__VERSION__ = "1.0.0-rc.1"
+__VERSION__ = "1.0.0-rc.2"
 
 from .const import (
     ANSI_ESCAPE,
