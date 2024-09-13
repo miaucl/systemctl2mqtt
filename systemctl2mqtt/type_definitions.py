@@ -82,6 +82,8 @@ class ServiceEvent(TypedDict):
         The description of the Service
     pid
         The pid of the Service
+    cpids
+        The child pids of the Service
     status
         The Systemctl status the Service is in
     state
@@ -92,6 +94,7 @@ class ServiceEvent(TypedDict):
     name: str
     description: str
     pid: int
+    cpids: list[int]
     status: ServiceEventStatusType
     state: ServiceEventStateType
 
@@ -101,15 +104,31 @@ class ServiceStatsRef(TypedDict):
 
     Attributes
     ----------
-    key
-        The reference key of a stat rotation
     last
         When the last stat rotation happened
 
     """
 
-    key: str
     last: datetime
+
+
+class PIDStats(TypedDict):
+    """A PID stats object which is part of the services stats.
+
+    Attributes
+    ----------
+    pid
+        The pid of the Service
+    memory
+        Used memory in MB
+    cpu
+        The cpu usage by the Service in cpu-% (ex.: a Systemctl with 4 cores has 400% cpu available)
+
+    """
+
+    pid: int
+    cpu: float
+    memory: float
 
 
 class ServiceStats(TypedDict):
@@ -125,6 +144,8 @@ class ServiceStats(TypedDict):
         Used memory in MB
     cpu
         The cpu usage by the Service in cpu-% (ex.: a Systemctl with 4 cores has 400% cpu available)
+    pid_stats
+        The stats for all pids
 
     """
 
@@ -132,6 +153,7 @@ class ServiceStats(TypedDict):
     host: str
     memory: float
     cpu: float
+    pid_stats: dict[int, PIDStats]
 
 
 class ServiceDeviceEntry(TypedDict):
