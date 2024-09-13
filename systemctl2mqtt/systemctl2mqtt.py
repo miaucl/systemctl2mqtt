@@ -3,7 +3,6 @@
 
 import argparse
 import datetime
-import hashlib
 import json
 import logging
 import platform
@@ -33,6 +32,8 @@ from .const import (
     MQTT_TOPIC_PREFIX_DEFAULT,
     STATS_RECORD_SECONDS_DEFAULT,
     STATS_REGISTRATION_ENTRIES,
+    SYSTEMCTL_CHILD_PID_POST_CMD,
+    SYSTEMCTL_CHILD_PID_PRE_CMD,
     SYSTEMCTL_EVENTS_CMD,
     SYSTEMCTL_LIST_CMD,
     SYSTEMCTL_PID_PRE_CMD,
@@ -46,6 +47,7 @@ from .exceptions import (
     Systemctl2MqttStatsException,
 )
 from .type_definitions import (
+    PIDStats,
     ServiceDeviceEntry,
     ServiceEntry,
     ServiceEvent,
@@ -125,7 +127,7 @@ class Systemctl2Mqtt:
     systemctl_events: Queue[dict[str, str]] = Queue(maxsize=MAX_QUEUE_SIZE)
     systemctl_stats: Queue[list[str]] = Queue(maxsize=MAX_QUEUE_SIZE)
     known_event_services: Dict[str, ServiceEvent] = {}
-    known_stat_services: Dict[str, ServiceStatsRef] = {}
+    known_stat_services: Dict[str, Dict[int, ServiceStatsRef]] = {}
     last_stat_services: Dict[str, ServiceStats | Dict[str, Any]] = {}
     pending_destroy_operations: Dict[str, float] = {}
 
@@ -514,20 +516,29 @@ class Systemctl2Mqtt:
                             break
                         if line:
                             stat = line.strip().split()
-                            thread_logger.debug("LINE: %s", stat)
                             if len(stat) > 0 and stat[0].isdigit():
                                 pid = int(stat[0])
                                 service = next(
                                     (
                                         s["name"]
                                         for s in self.known_event_services.values()
-                                        if s["pid"] == pid
+                                        if s["pid"] == pid or pid in s["cpids"]
                                     ),
                                     None,
                                 )
                                 if service:
                                     thread_logger.debug("Read top stat line: %s", line)
-                                    self.systemctl_stats.put(stat + [service])
+                                    self.systemctl_stats.put(
+                                        stat
+                                        + [service]
+                                        + [
+                                            str(
+                                                self.known_event_services[service][
+                                                    "pid"
+                                                ]
+                                            )
+                                        ]
+                                    )
                         _rc = process.poll()
                     else:
                         raise ReferenceError("process stdout is undefined")
@@ -590,6 +601,7 @@ class Systemctl2Mqtt:
                                 "name": service,
                                 "description": service_status["description"],
                                 "pid": self._pid_for_service(service),
+                                "cpids": self._child_pids_for_service(service),
                                 "status": status_str,
                                 "state": state_str,
                             }
@@ -631,6 +643,31 @@ class Systemctl2Mqtt:
         )
         pid = int(service_pid.stdout.strip())
         return pid
+
+    def _child_pids_for_service(self, service: str) -> list[int]:
+        """Get PID for service.
+
+        Parameters
+        ----------
+        service
+            The service
+
+        Returns
+        -------
+        list[int]
+            The child PIDs of the service
+
+        """
+        pid = self._pid_for_service(service)
+
+        service_pid = subprocess.run(
+            SYSTEMCTL_CHILD_PID_PRE_CMD + [str(pid)] + SYSTEMCTL_CHILD_PID_POST_CMD,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        pids = list(map(int, service_pid.stdout.strip().split()))
+        return pids
 
     def _register_service(self, service_entry: ServiceEvent) -> None:
         """Create discovery topics of service for all entities for home assistant.
@@ -949,59 +986,74 @@ class Systemctl2Mqtt:
             #
             #      0    1       2   3       4      5      6 7     8     9        10 11
             #
-            # Index -1: service name
+            # Index -2: service name
+            # Index -1: parent pid of the service
             #################################
 
         if self.b_stats and systemctl_stats_qsize > 0:
             if stat and len(stat) > 0:
                 try:
-                    service: str = stat[-1]
+                    pid = int(stat[0])
+                    ppid = int(stat[-1])
+                    service: str = stat[-2]
                     stats_logger.debug(
-                        "Have a Stat to process for service: %s", service
+                        "Have a Stat to process for service: %s (%s)", service, pid
                     )
 
-                    stats_logger.debug("Generating stat key (hashed stat line)")
-                    stat_key = hashlib.md5(" ".join(stat).encode("utf-8")).hexdigest()
-
                     if service not in self.known_stat_services:
-                        self.known_stat_services[service] = ServiceStatsRef(
-                            {"key": "", "last": datetime.datetime(2020, 1, 1)}
-                        )
-
+                        self.known_stat_services[service] = {}
                         self.last_stat_services[service] = {}
-
-                    stats_logger.debug("Current stat key: %s", stat_key)
-                    existing_stat_key = self.known_stat_services[service]["key"]
-                    stats_logger.debug("Last stat key: %s", existing_stat_key)
+                    if pid not in self.known_stat_services[service]:
+                        self.known_stat_services[service][pid] = ServiceStatsRef(
+                            {"last": datetime.datetime(2020, 1, 1)}
+                        )
 
                     check_date = datetime.datetime.now() - datetime.timedelta(
                         seconds=self.cfg["stats_record_seconds"]
                     )
-                    container_date = self.known_stat_services[service]["last"]
-                    stats_logger.debug(
-                        "Compare dates %s %s", check_date, container_date
-                    )
+                    pid_date = self.known_stat_services[service][pid]["last"]
+                    stats_logger.debug("Compare dates %s %s", check_date, pid_date)
 
-                    if stat_key != existing_stat_key and container_date <= check_date:
-                        send_mqtt = True
-                        stats_logger.info("Processing %s stats", service)
-                        self.known_stat_services[service]["key"] = stat_key
-                        self.known_stat_services[service]["last"] = (
+                    if pid_date <= check_date:
+                        # To reduce traffic, only send for the parent pid
+                        send_mqtt = ppid == pid
+
+                        stats_logger.info("Processing %s (%d) stats", service, pid)
+                        self.known_stat_services[service][pid]["last"] = (
                             datetime.datetime.now()
                         )
                         # delta_seconds = (
-                        #     self.known_stat_services[service]["last"] - container_date
+                        #     self.known_stat_services[service][pid]["last"] - container_date
                         # ).total_seconds()
+
+                        pid_stats = PIDStats(
+                            {
+                                "pid": pid,
+                                "cpu": float(stat[8]),
+                                "memory": float(stat[5]) / 1024,  # KB --> MB
+                            }
+                        )
+                        stats_logger.debug("Printing pid stats: %s", pid_stats)
 
                         service_stats = ServiceStats(
                             {
                                 "name": service,
                                 "host": self.cfg["systemctl2mqtt_hostname"],
-                                "cpu": float(stat[9]),
-                                "memory": float(stat[5]) / 1024,  # KB --> MB
+                                "cpu": 0,
+                                "memory": 0,
+                                "pid_stats": self.last_stat_services[service][
+                                    "pid_stats"
+                                ]
+                                if self.last_stat_services[service]
+                                else {},
                             }
                         )
-                        stats_logger.debug("Printing service stats: %s", service_stats)
+                        service_stats["pid_stats"][pid] = pid_stats
+
+                        for pid_stat in service_stats["pid_stats"].values():
+                            service_stats["memory"] += pid_stat["memory"]
+                            service_stats["cpu"] += pid_stat["cpu"]
+
                         self.last_stat_services[service] = service_stats
                     else:
                         stats_logger.debug(
@@ -1017,6 +1069,10 @@ class Systemctl2Mqtt:
                     ) from ex
 
                 if send_mqtt:
+                    stats_logger.debug(
+                        "Printing service stats: %s", self.last_stat_services[service]
+                    )
+
                     stats_logger.debug("Sending mqtt payload")
                     self._mqtt_send(
                         self.stats_topic.format(service),

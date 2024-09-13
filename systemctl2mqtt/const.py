@@ -31,6 +31,8 @@ MAX_QUEUE_SIZE = 100
 SYSTEMCTL_EVENTS_CMD = ["journalctl", "_COMM=systemd", "--output=json", "-f", "-n", "0"]
 SYSTEMCTL_LIST_CMD = ["systemctl", "--type=service", "--output=json", "--no-pager"]
 SYSTEMCTL_PID_PRE_CMD = ["systemctl", "show", "--property=MainPID", "--value"]
+SYSTEMCTL_CHILD_PID_PRE_CMD = ["ps", "--ppid"]
+SYSTEMCTL_CHILD_PID_POST_CMD = ["-o", "pid="]
 SYSTEMCTL_STATS_CMD = ["top", "-b", "-d", "1"]
 SYSTEMCTL_VERSION_CMD = ["systemctl", "--version", "|", "grep", "systemd"]
 INVALID_HA_TOPIC_CHARS = re.compile(r"[^a-zA-Z0-9_-]")

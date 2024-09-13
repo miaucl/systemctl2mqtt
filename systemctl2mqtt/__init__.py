@@ -19,6 +19,8 @@ from .const import (
     STATS_DEFAULT,
     STATS_RECORD_SECONDS_DEFAULT,
     STATS_REGISTRATION_ENTRIES,
+    SYSTEMCTL_CHILD_PID_POST_CMD,
+    SYSTEMCTL_CHILD_PID_PRE_CMD,
     SYSTEMCTL_EVENTS_CMD,
     SYSTEMCTL_LIST_CMD,
     SYSTEMCTL_PID_PRE_CMD,
@@ -35,6 +37,7 @@ from .exceptions import (
 )
 from .systemctl2mqtt import Systemctl2Mqtt
 from .type_definitions import (
+    PIDStats,
     ServiceDeviceEntry,
     ServiceEntry,
     ServiceEvent,
@@ -48,6 +51,7 @@ from .type_definitions import (
 __all__ = [
     "Systemctl2Mqtt",
     "ServiceEvent",
+    "PIDStats",
     "ServiceStats",
     "ServiceStatsRef",
     "ServiceDeviceEntry",
@@ -71,6 +75,8 @@ __all__ = [
     "SYSTEMCTL_EVENTS_CMD",
     "SYSTEMCTL_LIST_CMD",
     "SYSTEMCTL_PID_PRE_CMD",
+    "SYSTEMCTL_CHILD_PID_PRE_CMD",
+    "SYSTEMCTL_CHILD_PID_POST_CMD",
     "SYSTEMCTL_STATS_CMD",
     "SYSTEMCTL_VERSION_CMD",
     "INVALID_HA_TOPIC_CHARS",
