@@ -35,6 +35,7 @@ from .exceptions import (
     Systemctl2MqttException,
     Systemctl2MqttStatsException,
 )
+from .helpers import clean_for_discovery
 from .systemctl2mqtt import Systemctl2Mqtt
 from .type_definitions import (
     PIDStats,
@@ -53,6 +54,7 @@ from .type_definitions import (
 
 __all__ = [
     "Systemctl2Mqtt",
+    "clean_for_discovery",
     "ServiceEvent",
     "PIDStats",
     "ServiceStats",
