@@ -46,6 +46,7 @@ from .exceptions import (
     Systemctl2MqttEventsException,
     Systemctl2MqttStatsException,
 )
+from .helpers import clean_for_discovery
 from .type_definitions import (
     PIDStats,
     ServiceDeviceEntry,
@@ -723,7 +724,9 @@ class Systemctl2Mqtt:
             }
         )
         self._mqtt_send(
-            registration_topic, json.dumps(registration_packet), retain=True
+            registration_topic,
+            json.dumps(clean_for_discovery(registration_packet)),
+            retain=True,
         )
         self._mqtt_send(
             events_topic,
@@ -757,7 +760,9 @@ class Systemctl2Mqtt:
                 }
             )
             self._mqtt_send(
-                registration_topic, json.dumps(registration_packet), retain=True
+                registration_topic,
+                json.dumps(clean_for_discovery(registration_packet)),
+                retain=True,
             )
             self._mqtt_send(
                 stats_topic,
