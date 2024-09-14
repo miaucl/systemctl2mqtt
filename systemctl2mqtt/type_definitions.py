@@ -9,6 +9,14 @@ ServiceEventStateType = Literal["on", "off"]
 ServiceEventStatusType = Literal["running", "exited", "failed"]
 """Service event Systemctl status"""
 
+ServiceLoadType = Literal["loaded", "not-found", "error"]
+"""Systemctl service load status"""
+
+ServiceActiveType = Literal["active", "inactive", "failed"]
+"""Systemctl service active status"""
+
+"""Systemctl service sub status"""
+
 
 class Systemctl2MqttConfig(TypedDict):
     """A config object.
@@ -69,6 +77,31 @@ class Systemctl2MqttConfig(TypedDict):
     enable_events: bool
     enable_stats: bool
     stats_record_seconds: int
+
+
+class SystemctlService(TypedDict):
+    """A systemctl service definition.
+
+    Attributes
+    ----------
+    unit
+        The name of the service
+    load
+        Is the service loaded
+    active
+        High level status of the service
+    sub
+        Detailed state of the service
+    description
+        Description of the service
+
+    """
+
+    unit: str
+    load: ServiceLoadType
+    active: ServiceActiveType
+    sub: ServiceEventStatusType
+    description: str
 
 
 class ServiceEvent(TypedDict):

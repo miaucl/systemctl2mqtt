@@ -56,6 +56,7 @@ from .type_definitions import (
     ServiceStats,
     ServiceStatsRef,
     Systemctl2MqttConfig,
+    SystemctlService,
 )
 
 # Configure logging
@@ -570,47 +571,40 @@ class Systemctl2Mqtt:
     def _reload_services(self) -> None:
         """Reload the service and update all enabled/disabled services."""
         registered_services = []
-        systemctl_list = subprocess.run(
-            SYSTEMCTL_LIST_CMD, capture_output=True, text=True, check=False
-        )
-        for line in systemctl_list.stdout.splitlines():
-            services = json.loads(line)
-            for service_status in services:
-                status_str: ServiceEventStatusType
-                state_str: ServiceEventStateType
+        for service_status in self._get_services():
+            status_str: ServiceEventStatusType
+            state_str: ServiceEventStateType
 
-                service = service_status["unit"]
-                if self._filter_service(service) and "load" in service_status["load"]:
-                    if "active" in service_status["active"]:
-                        status_str = service_status["sub"]
-                        state_str = "on"
-                    elif "inactive" in service_status["active"]:
-                        status_str = service_status["sub"]
-                        state_str = "off"
-                    elif "failed" in service_status["active"]:
-                        status_str = service_status["sub"]
-                        state_str = "off"
-                    else:
-                        status_str = service_status["sub"]
-                        state_str = "off"
+            service = service_status["unit"]
+            if self._filter_service(service) and "load" in service_status["load"]:
+                if "active" in service_status["active"]:
+                    status_str = service_status["sub"]
+                    state_str = "on"
+                elif "inactive" in service_status["active"]:
+                    status_str = service_status["sub"]
+                    state_str = "off"
+                elif "failed" in service_status["active"]:
+                    status_str = service_status["sub"]
+                    state_str = "off"
+                else:
+                    status_str = service_status["sub"]
+                    state_str = "off"
 
-                    if self.b_events:
-                        registered_services.append(service)
-                        self._register_service(
-                            {
-                                "name": service,
-                                "description": service_status["description"],
-                                "pid": self._pid_for_service(service),
-                                "cpids": self._child_pids_for_service(service),
-                                "status": status_str,
-                                "state": state_str,
-                            }
-                        )
-                        if service in self.pending_destroy_operations:
-                            del self.pending_destroy_operations[service]
-                            events_logger.debug(
-                                "Removing pending delete for %s.", service
-                            )
+                if self.b_events:
+                    registered_services.append(service)
+                    self._register_service(
+                        {
+                            "name": service,
+                            "description": service_status["description"],
+                            "pid": self._pid_for_service(service),
+                            "cpids": self._child_pids_for_service(service),
+                            "status": status_str,
+                            "state": state_str,
+                        }
+                    )
+                    if service in self.pending_destroy_operations:
+                        del self.pending_destroy_operations[service]
+                        events_logger.debug("Removing pending delete for %s.", service)
 
         for service in self.known_event_services:
             if (
@@ -620,6 +614,24 @@ class Systemctl2Mqtt:
                 events_logger.debug("Mark as pending to delete for %s.", service)
                 del self.pending_destroy_operations[service]
                 self.pending_destroy_operations[service] = time()
+
+    def _get_services(self) -> list[SystemctlService]:
+        """Get services from systemctl.
+
+        Returns
+        -------
+        list[SystemctlService]
+            The services
+
+        """
+        systemctl_list = subprocess.run(
+            SYSTEMCTL_LIST_CMD, capture_output=True, text=True, check=False
+        )
+        return [
+            service
+            for line in systemctl_list.stdout.splitlines()
+            for service in json.loads(line)
+        ]
 
     def _pid_for_service(self, service: str) -> int:
         """Get PID for service.
@@ -1072,6 +1084,24 @@ class Systemctl2Mqtt:
                     stats_logger.debug(
                         "Printing service stats: %s", self.last_stat_services[service]
                     )
+
+                    child_pids = self._child_pids_for_service(service)
+                    self.known_event_services[service]["cpids"] = child_pids
+                    # Need to iterate keys beforehand to avoid "RuntimeError: dictionary changed size during iteration"
+                    pids = list(self.last_stat_services[service]["pid_stats"].keys())
+                    if len(pids) > 0:
+                        stats_logger.debug(
+                            "Checking for child pids of exited threads to clean up for service: %s",
+                            service,
+                        )
+                        for pid in pids:
+                            if int(pid) != ppid and pid not in child_pids:
+                                stats_logger.info(
+                                    "Cleanup child pid (%d) of service: %s",
+                                    pid,
+                                    service,
+                                )
+                                del self.last_stat_services[service]["pid_stats"][pid]
 
                     stats_logger.debug("Sending mqtt payload")
                     self._mqtt_send(
