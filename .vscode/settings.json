@@ -9,6 +9,7 @@
     "gethostname",
     "HOMEASSISTANT",
     "journalctl",
+    "jsons",
     "levelname",
     "markdownlint",
     "memorylimit",

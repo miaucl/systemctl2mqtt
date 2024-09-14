@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## 1.1.2
+
+* Update the discovery jsons for home assistant
+
 ## 1.1.1
 
 * Refresh child PIDs every interval data is reported (see README.md for limitations of this behaviour)
