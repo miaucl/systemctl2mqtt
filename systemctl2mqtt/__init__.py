@@ -38,14 +38,17 @@ from .exceptions import (
 from .systemctl2mqtt import Systemctl2Mqtt
 from .type_definitions import (
     PIDStats,
+    ServiceActiveType,
     ServiceDeviceEntry,
     ServiceEntry,
     ServiceEvent,
     ServiceEventStateType,
     ServiceEventStatusType,
+    ServiceLoadType,
     ServiceStats,
     ServiceStatsRef,
     Systemctl2MqttConfig,
+    SystemctlService,
 )
 
 __all__ = [
@@ -59,6 +62,9 @@ __all__ = [
     "ServiceEventStateType",
     "ServiceEventStatusType",
     "Systemctl2MqttConfig",
+    "SystemctlService",
+    "ServiceLoadType",
+    "ServiceActiveType",
     "LOG_LEVEL_DEFAULT",
     "DESTROYED_SERVICE_TTL_DEFAULT",
     "HOMEASSISTANT_PREFIX_DEFAULT",
