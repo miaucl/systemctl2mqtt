@@ -7,7 +7,7 @@
 
 This program uses `journalctl` and `systemctl` to watch for changes in your services, and `top` for metrics about those services, and delivers current status to MQTT. It will also publish Home Assistant MQTT Discovery messages so that (binary) sensors automatically show up in Home Assistant.
 
-The focus lies on long-running services with continuous uptime, instead of single or one-shot services, as the stats being reported as well as the child PIDs being refreshed every `STATS_RECORD_SECONDS`. For services with a lifespan comparable to this interval, the reported stats will not be accurate. Further, as the library uses `top` and matches the services with their respective PIDs, including child PIDs from subprocesses, it is not also suited for monitoring services which spawn regularly new threads.
+The focus lies on long-running services with continuous uptime, instead of single or one-shot services, as the stats being reported as well as the child PIDs being refreshed every `stats_record_seconds`. For services with a lifespan comparable to this interval, the reported stats will not be accurate. Further, as the library uses `top` and matches the services with their respective PIDs, including child PIDs from subprocesses, it is also not suited for monitoring services which spawn regularly new threads.
 
 _This is part of a family of similar tools:_
 
