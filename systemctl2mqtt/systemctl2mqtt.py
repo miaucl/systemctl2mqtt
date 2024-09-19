@@ -14,7 +14,7 @@ import subprocess
 import sys
 from threading import Thread
 from time import sleep, time
-from typing import Any, Dict
+from typing import Any
 
 import paho.mqtt.client
 
@@ -128,10 +128,10 @@ class Systemctl2Mqtt:
 
     systemctl_events: Queue[dict[str, str]] = Queue(maxsize=MAX_QUEUE_SIZE)
     systemctl_stats: Queue[list[str]] = Queue(maxsize=MAX_QUEUE_SIZE)
-    known_event_services: Dict[str, ServiceEvent] = {}
-    known_stat_services: Dict[str, Dict[int, ServiceStatsRef]] = {}
-    last_stat_services: Dict[str, ServiceStats | Dict[str, Any]] = {}
-    pending_destroy_operations: Dict[str, float] = {}
+    known_event_services: dict[str, ServiceEvent] = {}
+    known_stat_services: dict[str, dict[int, ServiceStatsRef]] = {}
+    last_stat_services: dict[str, ServiceStats | dict[str, Any]] = {}
+    pending_destroy_operations: dict[str, float] = {}
 
     mqtt: paho.mqtt.client.Client
 
@@ -206,7 +206,7 @@ class Systemctl2Mqtt:
         try:
             # Setup MQTT
             self.mqtt = paho.mqtt.client.Client(
-                callback_api_version=paho.mqtt.client.CallbackAPIVersion.VERSION2,  # type: ignore
+                callback_api_version=paho.mqtt.client.CallbackAPIVersion.VERSION2,  # type: ignore[attr-defined, call-arg]
                 client_id=self.cfg["mqtt_client_id"],
             )
             self.mqtt.username_pw_set(
