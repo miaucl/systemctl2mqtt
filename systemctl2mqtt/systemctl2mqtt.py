@@ -18,7 +18,7 @@ from typing import Any
 
 import paho.mqtt.client
 
-from . import __VERSION__
+from . import __version__
 from .const import (
     ANSI_ESCAPE,
     DESTROYED_SERVICE_TTL_DEFAULT,
@@ -119,7 +119,7 @@ class Systemctl2Mqtt:
     """
 
     # Version
-    version: str = __VERSION__
+    version: str = __version__
 
     cfg: Systemctl2MqttConfig
 
@@ -1129,7 +1129,7 @@ def main() -> None:
     """
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--version", action="version", version=f"%(prog)s {__VERSION__}"
+        "--version", action="version", version=f"%(prog)s {__version__}"
     )
     parser.add_argument(
         "--name",
