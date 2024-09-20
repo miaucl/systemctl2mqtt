@@ -44,6 +44,7 @@ from .exceptions import (
     Systemctl2MqttConfigException,
     Systemctl2MqttConnectionException,
     Systemctl2MqttEventsException,
+    Systemctl2MqttException,
     Systemctl2MqttStatsException,
 )
 from .helpers import clean_for_discovery
@@ -190,10 +191,10 @@ class Systemctl2Mqtt:
 
         try:
             self.systemctl_version = self._get_systemctl_version()
-        except FileNotFoundError as e:
+        except FileNotFoundError as ex:
             raise Systemctl2MqttConfigException(
                 "Could not get systemctl version"
-            ) from e
+            ) from ex
 
         if not self.do_not_exit:
             main_logger.info("Register signal handlers for SIGINT and SIGTERM")
@@ -225,10 +226,10 @@ class Systemctl2Mqtt:
             self._mqtt_send(self.status_topic, "online", retain=True)
             self._mqtt_send(self.version_topic, self.version, retain=True)
 
-        except paho.mqtt.client.WebsocketConnectionError as e:
-            main_logger.error("Error while trying to connect to MQTT broker.")
-            main_logger.error(str(e))
-            raise Systemctl2MqttConnectionException from e
+        except paho.mqtt.client.WebsocketConnectionError as ex:
+            main_logger.exception("Error while trying to connect to MQTT broker.")
+            main_logger.debug(ex)
+            raise Systemctl2MqttConnectionException from ex
 
         # Register services
         self._reload_services()
@@ -239,20 +240,20 @@ class Systemctl2Mqtt:
                 logging.info("Starting Events thread")
                 self._start_readline_events_thread()
                 started = True
-        except Exception as e:
-            main_logger.error("Error while trying to start events thread.")
-            main_logger.error(str(e))
-            raise Systemctl2MqttConfigException from e
+        except Exception as ex:
+            main_logger.exception("Error while trying to start events thread.")
+            main_logger.debug(ex)
+            raise Systemctl2MqttConfigException from ex
 
         try:
             if self.b_stats:
                 started = True
                 logging.info("Starting Stats thread")
                 self._start_readline_stats_thread()
-        except Exception as e:
-            main_logger.error("Error while trying to start stats thread.")
-            main_logger.error(str(e))
-            raise Systemctl2MqttConfigException from e
+        except Exception as ex:
+            main_logger.exception("Error while trying to start stats thread.")
+            main_logger.debug(ex)
+            raise Systemctl2MqttConfigException from ex
 
         if started is False:
             logging.critical("Nothing started, check your config!")
@@ -282,8 +283,9 @@ class Systemctl2Mqtt:
         main_logger.warning("Shutting down gracefully.")
         try:
             self._mqtt_disconnect()
-        except Systemctl2MqttConnectionException as e:
-            main_logger.error("MQTT Cleanup Failed: %s", str(e))
+        except Systemctl2MqttConnectionException as ex:
+            main_logger.exception("MQTT Cleanup Failed")
+            main_logger.debug(ex)
             main_logger.info("Ignoring cleanup error and exiting...")
 
     def loop(self) -> None:
@@ -311,8 +313,8 @@ class Systemctl2Mqtt:
                 main_logger.warning("Restarting events thread")
                 self._start_readline_events_thread()
         except Exception as e:
-            main_logger.error("Error while trying to restart events thread.")
-            main_logger.error(str(e))
+            main_logger.exception("Error while trying to restart events thread.")
+            main_logger.debug(e)
             raise Systemctl2MqttConfigException from e
 
         try:
@@ -320,8 +322,8 @@ class Systemctl2Mqtt:
                 main_logger.warning("Restarting stats thread")
                 self._start_readline_stats_thread()
         except Exception as e:
-            main_logger.error("Error while trying to restart stats thread.")
-            main_logger.error(str(e))
+            main_logger.exception("Error while trying to restart stats thread.")
+            main_logger.debug(e)
             raise Systemctl2MqttConfigException from e
 
     def loop_busy(self, raise_known_exceptions: bool = False) -> None:
@@ -348,14 +350,14 @@ class Systemctl2Mqtt:
                 self.loop()
             except Systemctl2MqttEventsException as ex:
                 if raise_known_exceptions:
-                    raise ex
+                    raise ex  # noqa: TRY201
                 else:
                     main_logger.warning(
                         "Do not raise due to raise_known_exceptions=False: %s", str(ex)
                     )
             except Systemctl2MqttStatsException as ex:
                 if raise_known_exceptions:
-                    raise ex
+                    raise ex  # noqa: TRY201
                 else:
                     main_logger.warning(
                         "Do not raise due to raise_known_exceptions=False: %s", str(ex)
@@ -397,7 +399,7 @@ class Systemctl2Mqtt:
                 # Extract the version information from the output
                 return result.stdout.strip()
             else:
-                raise Exception(f"Error: {result.stderr.strip()}")
+                raise Systemctl2MqttException(f"Error: {result.stderr.strip()}")
         except FileNotFoundError:
             return "Systemctl is not installed or not found in PATH."
 
@@ -425,9 +427,10 @@ class Systemctl2Mqtt:
                 topic, payload=payload, qos=self.cfg["mqtt_qos"], retain=retain
             )
 
-        except paho.mqtt.client.WebsocketConnectionError as e:
-            main_logger.error("MQTT Publish Failed: %s", str(e))
-            raise Systemctl2MqttConnectionException() from e
+        except paho.mqtt.client.WebsocketConnectionError as ex:
+            main_logger.exception("MQTT Publish Failed: %s")
+            main_logger.debug(ex)
+            raise Systemctl2MqttConnectionException() from ex
 
     def _mqtt_disconnect(self) -> None:
         """Make sure we send our last_will message.
@@ -454,9 +457,10 @@ class Systemctl2Mqtt:
             self.mqtt.disconnect()
             sleep(1)
             self.mqtt.loop_stop()
-        except paho.mqtt.client.WebsocketConnectionError as e:
-            main_logger.error("MQTT Disconnect: %s", str(e))
-            raise Systemctl2MqttConnectionException() from e
+        except paho.mqtt.client.WebsocketConnectionError as ex:
+            main_logger.exception("MQTT Disconnect")
+            main_logger.debug(ex)
+            raise Systemctl2MqttConnectionException() from ex
 
     def _start_readline_events_thread(self) -> None:
         """Start the events thread."""
@@ -476,22 +480,19 @@ class Systemctl2Mqtt:
                 SYSTEMCTL_EVENTS_CMD, stdout=subprocess.PIPE, text=True
             ) as process:
                 while True:
-                    if process.stdout:
-                        line = ANSI_ESCAPE.sub("", process.stdout.readline())
-                        if line == "" and process.poll() is not None:
-                            break
-                        if line:
-                            line_obj = json.loads(line)
-                            if self._filter_service(line_obj["UNIT"]):
-                                thread_logger.debug(
-                                    "Read journalctl event line: %s", line
-                                )
-                                self.systemctl_events.put(line_obj)
-                        _rc = process.poll()
-                    else:
-                        raise ReferenceError("process stdout is undefined")
+                    assert process.stdout
+                    line = ANSI_ESCAPE.sub("", process.stdout.readline())
+                    if line == "" and process.poll() is not None:
+                        break
+                    if line:
+                        line_obj = json.loads(line)
+                        if self._filter_service(line_obj["UNIT"]):
+                            thread_logger.debug("Read journalctl event line: %s", line)
+                            self.systemctl_events.put(line_obj)
+                    _rc = process.poll()
         except Exception as ex:
-            thread_logger.error("Error Running Events thread: %s", str(ex))
+            thread_logger.exception("Error Running Events thread")
+            thread_logger.debug(ex)
             thread_logger.debug("Waiting for main thread to restart this thread")
 
     def _start_readline_stats_thread(self) -> None:
@@ -512,40 +513,33 @@ class Systemctl2Mqtt:
                 SYSTEMCTL_STATS_CMD, stdout=subprocess.PIPE, text=True
             ) as process:
                 while True:
-                    if process.stdout:
-                        line = ANSI_ESCAPE.sub("", process.stdout.readline())
-                        if line == "" and process.poll() is not None:
-                            break
-                        if line:
-                            stat = line.strip().split()
-                            if len(stat) > 0 and stat[0].isdigit():
-                                pid = int(stat[0])
-                                service = next(
-                                    (
-                                        s["name"]
-                                        for s in self.known_event_services.values()
-                                        if s["pid"] == pid or pid in s["cpids"]
-                                    ),
-                                    None,
+                    assert process.stdout
+                    line = ANSI_ESCAPE.sub("", process.stdout.readline())
+                    if line == "" and process.poll() is not None:
+                        break
+                    if line:
+                        stat = line.strip().split()
+                        if len(stat) > 0 and stat[0].isdigit():
+                            pid = int(stat[0])
+                            service = next(
+                                (
+                                    s["name"]
+                                    for s in self.known_event_services.values()
+                                    if s["pid"] == pid or pid in s["cpids"]
+                                ),
+                                None,
+                            )
+                            if service:
+                                thread_logger.debug("Read top stat line: %s", line)
+                                self.systemctl_stats.put(
+                                    stat
+                                    + [service]
+                                    + [str(self.known_event_services[service]["pid"])]
                                 )
-                                if service:
-                                    thread_logger.debug("Read top stat line: %s", line)
-                                    self.systemctl_stats.put(
-                                        stat
-                                        + [service]
-                                        + [
-                                            str(
-                                                self.known_event_services[service][
-                                                    "pid"
-                                                ]
-                                            )
-                                        ]
-                                    )
-                        _rc = process.poll()
-                    else:
-                        raise ReferenceError("process stdout is undefined")
+                    _rc = process.poll()
         except Exception as ex:
-            thread_logger.error("Error Running Stats thread: %s", str(ex))
+            thread_logger.exception("Error Running Stats thread")
+            thread_logger.debug(ex)
             thread_logger.debug("Waiting for main thread to restart this thread")
 
     def _device_definition(self, service_entry: ServiceEvent) -> ServiceDeviceEntry:
@@ -960,8 +954,9 @@ class Systemctl2Mqtt:
                         )
 
                 except Exception as ex:
-                    events_logger.error("Error parsing line: %s", event)
-                    events_logger.error("Error of parsed line: %s", str(ex))
+                    events_logger.exception("Error parsing line: %s", event)
+                    events_logger.exception("Error of parsed line:")
+                    events_logger.debug(ex)
                     raise Systemctl2MqttEventsException(
                         f"Error parsing line: {event}"
                     ) from ex
@@ -1079,8 +1074,9 @@ class Systemctl2Mqtt:
                         )
 
                 except Exception as ex:
-                    stats_logger.error("Error parsing line: %s", str(stat))
-                    stats_logger.error("Error of parsed line: %s", str(ex))
+                    stats_logger.exception("Error parsing line: %s", str(stat))
+                    stats_logger.exception("Error of parsed line:")
+                    stats_logger.debug(ex)
                     raise Systemctl2MqttStatsException(
                         f"Error parsing line: {str(stat)}"
                     ) from ex
