@@ -23,7 +23,7 @@ from .const import (
     ANSI_ESCAPE,
     DESTROYED_SERVICE_TTL_DEFAULT,
     HOMEASSISTANT_PREFIX_DEFAULT,
-    HOMEASSISTANT_SINGLE_DEVICE,
+    HOMEASSISTANT_SINGLE_DEVICE_DEFAULT,
     INVALID_HA_TOPIC_CHARS,
     MAX_QUEUE_SIZE,
     MQTT_CLIENT_ID_DEFAULT,
@@ -1192,7 +1192,7 @@ def main() -> None:
     parser.add_argument(
         "--homeassistant-single-device",
         action="store_true",
-        help=f"Group all entities by a single device in Home Assistant instead of one device per entity (default: {HOMEASSISTANT_SINGLE_DEVICE})",
+        help=f"Group all entities by a single device in Home Assistant instead of one device per entity (default: {HOMEASSISTANT_SINGLE_DEVICE_DEFAULT})",
     )
     parser.add_argument(
         "--topic-prefix",
