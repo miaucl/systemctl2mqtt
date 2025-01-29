@@ -27,6 +27,8 @@ class Systemctl2MqttConfig(TypedDict):
         Log verbosity
     homeassistant_prefix
         MQTT discovery topic prefix
+    homeassistant_single_device
+        Group all entities by a single device in Home Assistant instead of one device per entity
     systemctl2mqtt_hostname
         A descriptive name for the Systemctl being monitored
     mqtt_client_id
@@ -62,6 +64,7 @@ class Systemctl2MqttConfig(TypedDict):
 
     log_level: str
     homeassistant_prefix: str
+    homeassistant_single_device: bool
     systemctl2mqtt_hostname: str
     mqtt_client_id: str
     mqtt_user: str
