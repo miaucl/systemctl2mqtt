@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## 1.3.0
+
+* Add option to group all entities into a single device in home assistant
+
 ## 1.2.0
 
 * Update version package identifier and bump setuptools
