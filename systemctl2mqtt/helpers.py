@@ -26,10 +26,9 @@ def clean_for_discovery(
         if isinstance(v, str | int | float | object) and v not in (None, "")
     }
 
+
 def parse_top_size(s: str) -> float:
-    """
-    Parse size string from top (like '8.5g', '512m', '1024k') into float (kilobytes).
-    """
+    """Parse size string from top (like '8.5g', '512m', '1024k') into float (kilobytes)."""
     s = s.strip().lower()
     if s[-1] in "kmgt":
         num = float(s[:-1])
