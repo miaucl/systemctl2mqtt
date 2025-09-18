@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## 1.3.1
+
+* Fix parsing of memory values with suffixes from top
+
 ## 1.3.0
 
 * Add option to group all entities into a single device in home assistant
