@@ -57,6 +57,8 @@ class Systemctl2MqttConfig(TypedDict):
         Flag to enable event monitoring
     enable_stats
         Flag to enable stat monitoring
+    enable_smaps
+        Flag to enable smaps memory monitoring (more detailed memory info, but more cpu usage), requires "enable_stats" to be True
     stats_record_seconds
         Interval every how many seconds the stats are published via MQTT
 
@@ -79,6 +81,7 @@ class Systemctl2MqttConfig(TypedDict):
     service_blacklist: list[str]
     enable_events: bool
     enable_stats: bool
+    enable_smaps: bool
     stats_record_seconds: int
 
 
@@ -156,15 +159,87 @@ class PIDStats(TypedDict):
     pid
         The pid of the Service
     memory
-        Used memory in MB
+        Used memory in MB (virtual, from top)
     cpu
         The cpu usage by the Service in cpu-% (ex.: a Systemctl with 4 cores has 400% cpu available)
-
+    memory_real_pss
+        Real memory in MB (calculated from smaps).
+        Based on Proportional Set Size (PSS): shared pages are divided among processes.
+        Best metric to estimate actual memory footprint of a process
+    memory_real
+        Real memory in MB (calculated from smaps).
+        Memory that will actually be freed if the process exits.
+        Based on Anonymous + SwapPss; shared file-backed pages are excluded, not divided.
+    memory_pss
+        Proportional Set Size in MB
+    memory_pss_anon
+        Anonymous PSS in MB
+    memory_pss_file
+        File-backed PSS in MB
+    memory_pss_dirty
+        Dirty PSS in MB
+    memory_pss_shmem
+        Shared memory PSS in MB
+    memory_rss
+        Resident Set Size in MB
+    memory_shared_clean
+        Shared clean pages in MB
+    memory_shared_dirty
+        Shared dirty pages in MB
+    memory_private_clean
+        Private clean pages in MB
+    memory_private_dirty
+        Private dirty pages in MB
+    memory_referenced
+        Referenced pages in MB
+    memory_anonymous
+        Anonymous memory in MB
+    memory_lazyfree
+        LazyFree pages in MB
+    memory_anon_hugepages
+        Anonymous huge pages in MB
+    memory_shmem_pmd_mapped
+        Shared memory PMD mapped pages in MB
+    memory_file_pmd_mapped
+        File-backed PMD mapped pages in MB
+    memory_shared_hugetlb
+        Shared hugetlb pages in MB
+    memory_private_hugetlb
+        Private hugetlb pages in MB
+    memory_swap
+        Swap in MB
+    memory_swappss
+        Proportional Swap usage in MB
+    memory_locked
+        Locked pages in MB
     """
 
     pid: int
     cpu: float
     memory: float
+    memory_real_pss: float
+    memory_real: float
+    memory_pss: float
+    memory_pss_anon: float
+    memory_pss_file: float
+    memory_pss_dirty: float
+    memory_pss_shmem: float
+    memory_rss: float
+    memory_shared_clean: float
+    memory_shared_dirty: float
+    memory_private_clean: float
+    memory_private_dirty: float
+    memory_referenced: float
+    memory_anonymous: float
+    memory_lazyfree: float
+    memory_anon_hugepages: float
+    memory_shmem_pmd_mapped: float
+    memory_file_pmd_mapped: float
+    memory_shared_hugetlb: float
+    memory_private_hugetlb: float
+    memory_swap: float
+    memory_swappss: float
+    memory_locked: float
 
 
 class ServiceStats(TypedDict):
@@ -177,12 +252,61 @@ class ServiceStats(TypedDict):
     host
         The Systemctl host
     memory
-        Used memory in MB
+        Used memory in MB (virtual, from top)
     cpu
         The cpu usage by the Service in cpu-% (ex.: a Systemctl with 4 cores has 400% cpu available)
     pid_stats
         The stats for all pids
-
+    memory_real_pss
+        Real memory in MB (calculated from smaps).
+        Based on Proportional Set Size (PSS): shared pages are divided among processes.
+        Best metric to estimate actual memory footprint of a process
+    memory_real
+        Real memory in MB (calculated from smaps).
+        Memory that will actually be freed if the process exits.
+        Based on Anonymous + SwapPss; shared file-backed pages are excluded, not divided.
+    memory_pss
+        Proportional Set Size in MB
+    memory_pss_anon
+        Anonymous PSS in MB
+    memory_pss_file
+        File-backed PSS in MB
+    memory_pss_dirty
+        Dirty PSS in MB
+    memory_pss_shmem
+        Shared memory PSS in MB
+    memory_rss
+        Resident Set Size in MB
+    memory_shared_clean
+        Shared clean pages in MB
+    memory_shared_dirty
+        Shared dirty pages in MB
+    memory_private_clean
+        Private clean pages in MB
+    memory_private_dirty
+        Private dirty pages in MB
+    memory_referenced
+        Referenced pages in MB
+    memory_anonymous
+        Anonymous memory in MB
+    memory_lazyfree
+        LazyFree pages in MB
+    memory_anon_hugepages
+        Anonymous huge pages in MB
+    memory_shmem_pmd_mapped
+        Shared memory PMD mapped pages in MB
+    memory_file_pmd_mapped
+        File-backed PMD mapped pages in MB
+    memory_shared_hugetlb
+        Shared hugetlb pages in MB
+    memory_private_hugetlb
+        Private hugetlb pages in MB
+    memory_swap
+        Swap in MB
+    memory_swappss
+        Proportional Swap usage in MB
+    memory_locked
+        Locked pages in MB
     """
 
     name: str
@@ -190,6 +314,29 @@ class ServiceStats(TypedDict):
     memory: float
     cpu: float
     pid_stats: dict[int, PIDStats]
+    memory_real_pss: float
+    memory_real: float
+    memory_pss: float
+    memory_pss_anon: float
+    memory_pss_file: float
+    memory_pss_dirty: float
+    memory_pss_shmem: float
+    memory_rss: float
+    memory_shared_clean: float
+    memory_shared_dirty: float
+    memory_private_clean: float
+    memory_private_dirty: float
+    memory_referenced: float
+    memory_anonymous: float
+    memory_lazyfree: float
+    memory_anon_hugepages: float
+    memory_shmem_pmd_mapped: float
+    memory_file_pmd_mapped: float
+    memory_shared_hugetlb: float
+    memory_private_hugetlb: float
+    memory_swap: float
+    memory_swappss: float
+    memory_locked: float
 
 
 class ServiceDeviceEntry(TypedDict):
@@ -242,6 +389,8 @@ class ServiceEntry(TypedDict):
         The device the sensor is attributed to
     device_class
         The device class of the sensor
+    entity_category
+        The entity category of the sensor
     state_topic
         The topic containing all information for the attributes of the sensor
     qos
@@ -262,5 +411,6 @@ class ServiceEntry(TypedDict):
     payload_off: str | None
     device: ServiceDeviceEntry
     device_class: str | None
+    entity_category: str | None
     json_attributes_topic: str | None
     qos: int
