@@ -48,7 +48,7 @@ from .exceptions import (
     Systemctl2MqttException,
     Systemctl2MqttStatsException,
 )
-from .helpers import clean_for_discovery
+from .helpers import clean_for_discovery, parse_top_size
 from .type_definitions import (
     PIDStats,
     ServiceDeviceEntry,
@@ -1049,7 +1049,7 @@ class Systemctl2Mqtt:
                             {
                                 "pid": pid,
                                 "cpu": float(stat[8]),
-                                "memory": float(stat[5]) / 1024,  # KB --> MB
+                                "memory": parse_top_size(stat[5]) / 1024,  # KB --> MB
                             }
                         )
                         stats_logger.debug("Printing pid stats: %s", pid_stats)
