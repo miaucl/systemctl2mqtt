@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## DEPRECATED
+
+ This changelog is no longer maintained and will not be updated in future releases. Please refer to the [release notes](https://github.com/miaucl/systemctl2mqtt/releases/latest) on GitHub for the latest changes.
+
 ## 1.3.1
 
 * Fix parsing of memory values with suffixes from top
