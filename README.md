@@ -52,9 +52,9 @@ except Exception as ex:
 You can use environment variables to control the behavior.
 
 | Config | Default | Description |
-|--------|---------|-------------|
+| -------- | --------- | ------------- |
 | `log_level` | `INFO` | Set to `DEBUG,INFO,WARN,ERROR,CRITICAL` to enable different levels of verbosity. |
-| `systemctl2mqtt_hostname` | systemctl2mqtt Hostname | The hostname of your host, if you want to overwrite it.  |
+| `systemctl2mqtt_hostname` | systemctl2mqtt Hostname | The hostname of your host, if you want to overwrite it. |
 | `homeassistant_prefix` | `homeassistant` | The prefix for Home Assistant discovery. Must be the same as `discovery_prefix` in your Home Assistant configuration. |
 | `homeassistant_single_device` | `false` | Group all entities by a single device in Home Assistant instead of one device per entity. |
 | `mqtt_client_id` | `mqtt2discord` | The client id to send to the MQTT broker. |
