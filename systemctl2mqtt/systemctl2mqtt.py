@@ -5,6 +5,9 @@ import argparse
 import datetime
 import json
 import logging
+from logging.handlers import RotatingFileHandler
+from os import path
+from pathlib import Path
 import platform
 from queue import Empty, Queue
 import re
@@ -12,9 +15,10 @@ import signal
 import socket
 import subprocess
 import sys
-from threading import Thread
+from threading import Event, Thread
 from time import sleep, time
 from typing import Any
+import uuid
 
 import paho.mqtt.client
 
@@ -61,9 +65,6 @@ from .type_definitions import (
     Systemctl2MqttConfig,
     SystemctlService,
 )
-
-# Configure logging
-logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 # Loggers
 main_logger = logging.getLogger("main")
@@ -134,6 +135,8 @@ class Systemctl2Mqtt:
     known_stat_services: dict[str, dict[int, ServiceStatsRef]] = {}
     last_stat_services: dict[str, ServiceStats | dict[str, Any]] = {}
     pending_destroy_operations: dict[str, float] = {}
+    pid_to_service: dict[int, str] = {}
+    first_connection_event: Event
 
     mqtt: paho.mqtt.client.Client
 
@@ -165,6 +168,7 @@ class Systemctl2Mqtt:
 
         self.cfg = cfg
         self.do_not_exit = do_not_exit
+        self.first_connection_event = Event()
 
         self.discovery_binary_sensor_topic = f"{cfg['homeassistant_prefix']}/binary_sensor/{cfg['mqtt_topic_prefix']}/{cfg['systemctl2mqtt_hostname']}_{{}}/config"
         self.discovery_sensor_topic = f"{cfg['homeassistant_prefix']}/sensor/{cfg['mqtt_topic_prefix']}/{cfg['systemctl2mqtt_hostname']}_{{}}/config"
@@ -186,10 +190,6 @@ class Systemctl2Mqtt:
         if self.cfg["enable_stats"]:
             self.b_stats = True
 
-        main_logger.setLevel(self.cfg["log_level"].upper())
-        events_logger.setLevel(self.cfg["log_level"].upper())
-        stats_logger.setLevel(self.cfg["log_level"].upper())
-
         try:
             self.systemctl_version = self._get_systemctl_version()
         except FileNotFoundError as ex:
@@ -208,9 +208,10 @@ class Systemctl2Mqtt:
         try:
             # Setup MQTT
             self.mqtt = paho.mqtt.client.Client(
-                callback_api_version=paho.mqtt.client.CallbackAPIVersion.VERSION2,  # type: ignore[attr-defined, call-arg]
-                client_id=self.cfg["mqtt_client_id"],
+                callback_api_version=paho.mqtt.enums.CallbackAPIVersion.VERSION2,
+                client_id=f"{self.cfg['mqtt_client_id']}_{uuid.uuid4().hex[:6]}",
             )
+            self.mqtt.enable_logger(main_logger)
             self.mqtt.username_pw_set(
                 username=self.cfg["mqtt_user"], password=self.cfg["mqtt_password"]
             )
@@ -220,20 +221,21 @@ class Systemctl2Mqtt:
                 qos=self.cfg["mqtt_qos"],
                 retain=True,
             )
-            self.mqtt.connect(
+            self.mqtt.reconnect_delay_set(min_delay=1, max_delay=300)
+            self.mqtt.on_connect = self._on_connect
+            self.mqtt.on_connect_fail = self._on_connect_fail
+            self.mqtt.on_disconnect = self._on_disconnect
+            self.mqtt.connect_async(
                 self.cfg["mqtt_host"], self.cfg["mqtt_port"], self.cfg["mqtt_timeout"]
             )
             self.mqtt.loop_start()
-            self._mqtt_send(self.status_topic, "online", retain=True)
-            self._mqtt_send(self.version_topic, self.version, retain=True)
 
         except paho.mqtt.client.WebsocketConnectionError as ex:
             main_logger.exception("Error while trying to connect to MQTT broker.")
             main_logger.debug(ex)
             raise Systemctl2MqttConnectionException from ex
 
-        # Register services
-        self._reload_services()
+        self.first_connection_event.wait()
 
         started = False
         try:
@@ -248,9 +250,9 @@ class Systemctl2Mqtt:
 
         try:
             if self.b_stats:
-                started = True
                 logging.info("Starting Stats thread")
                 self._start_readline_stats_thread()
+                started = True
         except Exception as ex:
             main_logger.exception("Error while trying to start stats thread.")
             main_logger.debug(ex)
@@ -288,6 +290,85 @@ class Systemctl2Mqtt:
             main_logger.exception("MQTT Cleanup Failed")
             main_logger.debug(ex)
             main_logger.info("Ignoring cleanup error and exiting...")
+
+    def _on_connect(
+        self,
+        _client: Any,
+        _userdata: Any,
+        _flags: Any,
+        reason_code: Any,
+        _props: Any = None,
+    ) -> None:
+        """Handle the connection return.
+
+        Parameters
+        ----------
+        _client
+            The client id (unused)
+        _userdata
+            The userdata (unused)
+        _flags
+            The flags (unused)
+        reason_code
+            The reason code
+        _props
+            The props (unused)
+
+        """
+        if reason_code == 0:
+            main_logger.info("Connected to MQTT broker.")
+            self._mqtt_send(self.status_topic, "online", retain=True)
+            self._mqtt_send(self.version_topic, self.version, retain=True)
+
+            # Register services with HA
+            self._reload_services()
+
+            self.first_connection_event.set()
+        else:
+            main_logger.error("Connection refused : %s", reason_code.getName())
+
+    def _on_connect_fail(self, _client: Any, _userdata: Any) -> None:
+        """Handle the connection failure.
+
+        Parameters
+        ----------
+        _client
+            The client id (unused)
+        _userdata
+            The userdata (unused)
+
+        """
+        main_logger.error("Connect failed")
+
+    def _on_disconnect(
+        self,
+        _client: Any,
+        _userdata: Any,
+        reason_code: Any,
+        _props: Any = None,
+    ) -> None:
+        """Handle the disconnection return.
+
+        Parameters
+        ----------
+        _client
+            The client id (unused)
+        _userdata
+            The userdata (unused)
+        reason_code
+            The reason code
+        _props
+            The props (unused)
+
+        """
+        if reason_code == 0:
+            main_logger.warning("Disconnected from MQTT broker.")
+        else:
+            main_logger.error(
+                "Disconnected : ReasonCode %d, %s",
+                reason_code.value,
+                reason_code.getName(),
+            )
 
     def loop(self) -> None:
         """Start the loop.
@@ -346,6 +427,9 @@ class Systemctl2Mqtt:
 
         """
 
+        while not self.first_connection_event.wait(5):
+            main_logger.debug("Waiting for connection.")
+
         while True:
             try:
                 self.loop()
@@ -369,7 +453,8 @@ class Systemctl2Mqtt:
                 MAX_QUEUE_SIZE
                 - max(self.systemctl_events.qsize(), self.systemctl_stats.qsize())
             )
-            main_logger.debug("Sleep for %.5fs until next iteration", sleep_time)
+            if main_logger.isEnabledFor(logging.DEBUG):
+                main_logger.debug("Sleep for %.5fs until next iteration", sleep_time)
             sleep(sleep_time)
 
     def _get_systemctl_version(self) -> str:
@@ -423,7 +508,8 @@ class Systemctl2Mqtt:
 
         """
         try:
-            main_logger.debug("Sending to MQTT: %s: %s", topic, payload)
+            if main_logger.isEnabledFor(logging.DEBUG):
+                main_logger.debug("Sending to MQTT: %s: %s", topic, payload)
             self.mqtt.publish(
                 topic, payload=payload, qos=self.cfg["mqtt_qos"], retain=retain
             )
@@ -473,10 +559,13 @@ class Systemctl2Mqtt:
     def _run_readline_events_thread(self) -> None:
         """Run journal events and continually read lines from it."""
         thread_logger = logging.getLogger("event-thread")
-        thread_logger.setLevel(self.cfg["log_level"].upper())
+        configure_logger(
+            thread_logger, self.cfg["log_level"], self.cfg.get("log_dir", None)
+        )
         try:
             thread_logger.info("Starting events thread")
-            thread_logger.debug("Command: %s", SYSTEMCTL_EVENTS_CMD)
+            if thread_logger.isEnabledFor(logging.DEBUG):
+                thread_logger.debug("Command: %s", SYSTEMCTL_EVENTS_CMD)
             with subprocess.Popen(
                 SYSTEMCTL_EVENTS_CMD, stdout=subprocess.PIPE, text=True
             ) as process:
@@ -488,7 +577,10 @@ class Systemctl2Mqtt:
                     if line:
                         line_obj = json.loads(line)
                         if self._filter_service(line_obj["UNIT"]):
-                            thread_logger.debug("Read journalctl event line: %s", line)
+                            if thread_logger.isEnabledFor(logging.DEBUG):
+                                thread_logger.debug(
+                                    "Read journalctl event line: %s", line
+                                )
                             self.systemctl_events.put(line_obj)
                     _rc = process.poll()
         except Exception as ex:
@@ -506,10 +598,13 @@ class Systemctl2Mqtt:
     def _run_readline_stats_thread(self) -> None:
         """Run top stats and continually read lines from it."""
         thread_logger = logging.getLogger("stats-thread")
-        thread_logger.setLevel(self.cfg["log_level"].upper())
+        configure_logger(
+            thread_logger, self.cfg["log_level"], self.cfg.get("log_dir", None)
+        )
         try:
             thread_logger.info("Starting stats thread")
-            thread_logger.debug("Command: %s", SYSTEMCTL_STATS_CMD)
+            if thread_logger.isEnabledFor(logging.DEBUG):
+                thread_logger.debug("Command: %s", SYSTEMCTL_STATS_CMD)
             with subprocess.Popen(
                 SYSTEMCTL_STATS_CMD, stdout=subprocess.PIPE, text=True
             ) as process:
@@ -522,16 +617,10 @@ class Systemctl2Mqtt:
                         stat = line.strip().split()
                         if len(stat) > 0 and stat[0].isdigit():
                             pid = int(stat[0])
-                            service = next(
-                                (
-                                    s["name"]
-                                    for s in self.known_event_services.values()
-                                    if s["pid"] == pid or pid in s["cpids"]
-                                ),
-                                None,
-                            )
+                            service = self.pid_to_service.get(pid)
                             if service:
-                                thread_logger.debug("Read top stat line: %s", line)
+                                if thread_logger.isEnabledFor(logging.DEBUG):
+                                    thread_logger.debug("Read top stat line: %s", line)
                                 self.systemctl_stats.put(
                                     stat
                                     + [service]
@@ -562,12 +651,16 @@ class Systemctl2Mqtt:
             return {
                 "identifiers": f"{self.cfg['systemctl2mqtt_hostname']}_{self.cfg['mqtt_topic_prefix']}_{service}",
                 "name": f"{self.cfg['systemctl2mqtt_hostname']} {self.cfg['mqtt_topic_prefix'].title()} {service}",
-                "model": f"{platform.system()} {platform.machine()} {self.systemctl_version}",
+                "hw_version": platform.system(),
+                "model": platform.machine(),
+                "sw_version": f"systemctl2mqtt {self.version}",
             }
         return {
             "identifiers": f"{self.cfg['systemctl2mqtt_hostname']}_{self.cfg['mqtt_topic_prefix']}",
             "name": f"{self.cfg['systemctl2mqtt_hostname']} {self.cfg['mqtt_topic_prefix'].title()}",
-            "model": f"{platform.system()} {platform.machine()} {self.systemctl_version}",
+            "hw_version": platform.system(),
+            "model": platform.machine(),
+            "sw_version": f"systemctl2mqtt {self.version}",
         }
 
     def _reload_services(self) -> None:
@@ -606,14 +699,18 @@ class Systemctl2Mqtt:
                     )
                     if service in self.pending_destroy_operations:
                         del self.pending_destroy_operations[service]
-                        events_logger.debug("Removing pending delete for %s.", service)
+                        if events_logger.isEnabledFor(logging.DEBUG):
+                            events_logger.debug(
+                                "Removing pending delete for %s.", service
+                            )
 
         for service in self.known_event_services:
             if (
                 service not in self.pending_destroy_operations
                 and service not in registered_services
             ):
-                events_logger.debug("Mark as pending to delete for %s.", service)
+                if events_logger.isEnabledFor(logging.DEBUG):
+                    events_logger.debug("Mark as pending to delete for %s.", service)
                 del self.pending_destroy_operations[service]
                 self.pending_destroy_operations[service] = time()
 
@@ -658,6 +755,18 @@ class Systemctl2Mqtt:
         pid = int(service_pid.stdout.strip())
         return pid
 
+    def _update_pid_index(self, service: str) -> None:
+        """Update the pid to service index."""
+        entry = self.known_event_services[service]
+        self.pid_to_service[entry["pid"]] = service
+        for cpid in entry["cpids"]:
+            self.pid_to_service[cpid] = service
+
+    def _remove_pid_index(self, service: str) -> None:
+        for pid, s in list(self.pid_to_service.items()):
+            if s == service:
+                del self.pid_to_service[pid]
+
     def _child_pids_for_service(self, service: str) -> list[int]:
         """Get PID for service.
 
@@ -699,6 +808,7 @@ class Systemctl2Mqtt:
         """
         service = service_entry["name"]
         self.known_event_services[service] = service_entry
+        self._update_pid_index(service)
 
         # Events
         registration_topic = self.discovery_binary_sensor_topic.format(
@@ -749,7 +859,7 @@ class Systemctl2Mqtt:
                     "payload_available": "online",
                     "payload_not_available": "offline",
                     "state_topic": stats_topic,
-                    "value_template": f"{{{{ value_json.{ field } if value_json is not undefined and value_json.{ field } is not undefined else None }}}}",
+                    "value_template": f"{{{{ value_json.{field} if value_json is not undefined and value_json.{field} is not undefined else None }}}}",
                     "unit_of_measurement": unit,
                     "icon": icon,
                     "payload_on": None,
@@ -852,9 +962,12 @@ class Systemctl2Mqtt:
         if len(self.cfg["service_whitelist"]) > 0:
             for to_check in self.cfg["service_whitelist"]:
                 if self._match_service(service, to_check):
-                    events_logger.debug(
-                        "Match service '%s' with whitelist entry: %s", service, to_check
-                    )
+                    if events_logger.isEnabledFor(logging.DEBUG):
+                        events_logger.debug(
+                            "Match service '%s' with whitelist entry: %s",
+                            service,
+                            to_check,
+                        )
                     break
             else:
                 return False
@@ -901,7 +1014,8 @@ class Systemctl2Mqtt:
         try:
             if self.b_events:
                 event = self.systemctl_events.get(block=False)
-            events_logger.debug("Events queue length: %s", systemctl_events_qsize)
+            if events_logger.isEnabledFor(logging.DEBUG):
+                events_logger.debug("Events queue length: %s", systemctl_events_qsize)
         except Empty:
             # No data right now, just move along.
             pass
@@ -910,19 +1024,21 @@ class Systemctl2Mqtt:
             if event:
                 try:
                     service: str = event["UNIT"]
-                    events_logger.debug(
-                        "Have an event to process for Service: %s", service
-                    )
+                    if events_logger.isEnabledFor(logging.DEBUG):
+                        events_logger.debug(
+                            "Have an event to process for Service: %s", service
+                        )
 
                     if event["MESSAGE"] == "Reloading.":
                         self._reload_services()
 
                     if "JOB_TYPE" in event:
                         if "JOB_RESULT" not in event:
-                            events_logger.debug(
-                                "Skip pending event for service %s",
-                                service,
-                            )
+                            if events_logger.isEnabledFor(logging.DEBUG):
+                                events_logger.debug(
+                                    "Skip pending event for service %s",
+                                    service,
+                                )
 
                         if event["JOB_TYPE"] == "start" and "JOB_RESULT" in event:
                             events_logger.info("Service %s has been started.", service)
@@ -933,6 +1049,10 @@ class Systemctl2Mqtt:
                             self.known_event_services[service]["pid"] = (
                                 self._pid_for_service(service)
                             )
+                            self.known_event_services[service]["cpids"] = (
+                                self._child_pids_for_service(service)
+                            )
+                            self._update_pid_index(service)
 
                         elif event["JOB_TYPE"] == "stop" and "JOB_RESULT" in event:
                             # Add this service to pending_destroy_operations.
@@ -941,6 +1061,7 @@ class Systemctl2Mqtt:
                                 "exited" if event["JOB_RESULT"] == "done" else "failed"
                             )
                             self.known_event_services[service]["state"] = "off"
+                            self._remove_pid_index(service)
 
                         elif event["JOB_TYPE"] == "restart" and "JOB_RESULT" in event:
                             events_logger.info("Service %s has restarted.", service)
@@ -948,14 +1069,21 @@ class Systemctl2Mqtt:
                                 "exited" if event["JOB_RESULT"] == "done" else "failed"
                             )
                             self.known_event_services[service]["state"] = "off"
+                            self.known_event_services[service]["pid"] = (
+                                self._pid_for_service(service)
+                            )
+                            self.known_event_services[service]["cpids"] = (
+                                self._child_pids_for_service(service)
+                            )
+                            self._update_pid_index(service)
 
-                        else:
+                        elif events_logger.isEnabledFor(logging.DEBUG):
                             events_logger.debug(
                                 "Unknown event: %s",
                                 event.get("JOB_TYPE", "--event not found--"),
                             )
 
-                    else:
+                    elif events_logger.isEnabledFor(logging.DEBUG):
                         events_logger.debug(
                             "Skip line: %s", event.get("MESSAGE", str(event))
                         )
@@ -968,7 +1096,8 @@ class Systemctl2Mqtt:
                         f"Error parsing line: {event}"
                     ) from ex
 
-                events_logger.debug("Sending mqtt payload")
+                if events_logger.isEnabledFor(logging.DEBUG):
+                    events_logger.debug("Sending mqtt payload")
                 self._mqtt_send(
                     self.events_topic.format(service),
                     json.dumps(self.known_event_services[service]),
@@ -991,7 +1120,8 @@ class Systemctl2Mqtt:
         try:
             if self.b_stats:
                 stat = self.systemctl_stats.get(block=False)
-            stats_logger.debug("Stats queue length: %s", systemctl_stats_qsize)
+            if stats_logger.isEnabledFor(logging.DEBUG):
+                stats_logger.debug("Stats queue length: %s", systemctl_stats_qsize)
         except Empty:
             # No data right now, just move along.
             return
@@ -1015,9 +1145,10 @@ class Systemctl2Mqtt:
                     pid = int(stat[0])
                     ppid = int(stat[-1])
                     service: str = stat[-2]
-                    stats_logger.debug(
-                        "Have a Stat to process for service: %s (%s)", service, pid
-                    )
+                    if stats_logger.isEnabledFor(logging.DEBUG):
+                        stats_logger.debug(
+                            "Have a Stat to process for service: %s (%s)", service, pid
+                        )
 
                     if service not in self.known_stat_services:
                         self.known_stat_services[service] = {}
@@ -1031,54 +1162,55 @@ class Systemctl2Mqtt:
                         seconds=self.cfg["stats_record_seconds"]
                     )
                     pid_date = self.known_stat_services[service][pid]["last"]
-                    stats_logger.debug("Compare dates %s %s", check_date, pid_date)
+                    if stats_logger.isEnabledFor(logging.DEBUG):
+                        stats_logger.debug("Compare dates %s %s", check_date, pid_date)
 
-                    if pid_date <= check_date:
-                        # To reduce traffic, only send for the parent pid
-                        send_mqtt = ppid == pid
+                    if pid_date > check_date:
+                        if stats_logger.isEnabledFor(logging.DEBUG):
+                            stats_logger.debug(
+                                "Not processing record as duplicate record or too young: %s ",
+                                service,
+                            )
+                        return
+                    # To reduce traffic, only send for the parent pid
+                    send_mqtt = ppid == pid
 
-                        stats_logger.info("Processing %s (%d) stats", service, pid)
-                        self.known_stat_services[service][pid]["last"] = (
-                            datetime.datetime.now()
-                        )
-                        # delta_seconds = (
-                        #     self.known_stat_services[service][pid]["last"] - container_date
-                        # ).total_seconds()
+                    stats_logger.info("Processing %s (%d) stats", service, pid)
+                    self.known_stat_services[service][pid]["last"] = (
+                        datetime.datetime.now()
+                    )
+                    # delta_seconds = (
+                    #     self.known_stat_services[service][pid]["last"] - container_date
+                    # ).total_seconds()
 
-                        pid_stats = PIDStats(
-                            {
-                                "pid": pid,
-                                "cpu": float(stat[8]),
-                                "memory": parse_top_size(stat[5]) / 1024,  # KB --> MB
-                            }
-                        )
+                    pid_stats = PIDStats(
+                        {
+                            "pid": pid,
+                            "cpu": float(stat[8]),
+                            "memory": parse_top_size(stat[5]) / 1024,  # KB --> MB
+                        }
+                    )
+                    if stats_logger.isEnabledFor(logging.DEBUG):
                         stats_logger.debug("Printing pid stats: %s", pid_stats)
 
-                        service_stats = ServiceStats(
-                            {
-                                "name": service,
-                                "host": self.cfg["systemctl2mqtt_hostname"],
-                                "cpu": 0,
-                                "memory": 0,
-                                "pid_stats": self.last_stat_services[service][
-                                    "pid_stats"
-                                ]
-                                if self.last_stat_services[service]
-                                else {},
-                            }
-                        )
-                        service_stats["pid_stats"][pid] = pid_stats
+                    service_stats = ServiceStats(
+                        {
+                            "name": service,
+                            "host": self.cfg["systemctl2mqtt_hostname"],
+                            "cpu": 0,
+                            "memory": 0,
+                            "pid_stats": self.last_stat_services[service]["pid_stats"]
+                            if self.last_stat_services[service]
+                            else {},
+                        }
+                    )
+                    service_stats["pid_stats"][pid] = pid_stats
 
-                        for pid_stat in service_stats["pid_stats"].values():
-                            service_stats["memory"] += pid_stat["memory"]
-                            service_stats["cpu"] += pid_stat["cpu"]
+                    for pid_stat in service_stats["pid_stats"].values():
+                        service_stats["memory"] += pid_stat["memory"]
+                        service_stats["cpu"] += pid_stat["cpu"]
 
-                        self.last_stat_services[service] = service_stats
-                    else:
-                        stats_logger.debug(
-                            "Not processing record as duplicate record or too young: %s ",
-                            service,
-                        )
+                    self.last_stat_services[service] = service_stats
 
                 except Exception as ex:
                     stats_logger.exception("Error parsing line: %s", str(stat))
@@ -1089,19 +1221,22 @@ class Systemctl2Mqtt:
                     ) from ex
 
                 if send_mqtt:
-                    stats_logger.debug(
-                        "Printing service stats: %s", self.last_stat_services[service]
-                    )
+                    if stats_logger.isEnabledFor(logging.DEBUG):
+                        stats_logger.debug(
+                            "Printing service stats: %s",
+                            self.last_stat_services[service],
+                        )
 
                     child_pids = self._child_pids_for_service(service)
                     self.known_event_services[service]["cpids"] = child_pids
                     # Need to iterate keys beforehand to avoid "RuntimeError: dictionary changed size during iteration"
                     pids = list(self.last_stat_services[service]["pid_stats"].keys())
                     if len(pids) > 0:
-                        stats_logger.debug(
-                            "Checking for child pids of exited threads to clean up for service: %s",
-                            service,
-                        )
+                        if stats_logger.isEnabledFor(logging.DEBUG):
+                            stats_logger.debug(
+                                "Checking for child pids of exited threads to clean up for service: %s",
+                                service,
+                            )
                         for pid in pids:
                             if int(pid) != ppid and pid not in child_pids:
                                 stats_logger.info(
@@ -1111,12 +1246,70 @@ class Systemctl2Mqtt:
                                 )
                                 del self.last_stat_services[service]["pid_stats"][pid]
 
-                    stats_logger.debug("Sending mqtt payload")
+                    if stats_logger.isEnabledFor(logging.DEBUG):
+                        stats_logger.debug("Sending mqtt payload")
                     self._mqtt_send(
                         self.stats_topic.format(service),
                         json.dumps(self.last_stat_services[service]),
                         retain=False,
                     )
+
+
+def configure_logger(
+    logger: logging.Logger, verbosity: int, logdir: str | None
+) -> None:
+    """Configure logger.
+
+    Parameters
+    ----------
+    logger
+        The logger to configure
+    verbosity
+        The verbosity level
+    logdir
+        The log directory
+
+    """
+    if verbosity >= 5:
+        logger.setLevel(logging.DEBUG)
+    elif verbosity == 4:
+        logger.setLevel(logging.INFO)
+    elif verbosity == 3:
+        logger.setLevel(logging.WARNING)
+    elif verbosity == 2:
+        logger.setLevel(logging.ERROR)
+    elif verbosity == 1:
+        logger.setLevel(logging.CRITICAL)
+
+    # Configure logger
+    logger.propagate = False
+
+    log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    formatter = logging.Formatter(log_format)
+
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+    if logdir:
+        try:
+            logdirpath = Path(logdir)
+            absolute_logdir = (
+                logdirpath.resolve() if not logdirpath.is_absolute() else logdirpath
+            )
+            absolute_logdir.mkdir(parents=True, exist_ok=True)
+            log_file = path.join(absolute_logdir, f"systemctl2mqtt-{logger.name}.log")
+            file_handler = RotatingFileHandler(
+                log_file, maxBytes=1_000_000, backupCount=5
+            )
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
+        except Exception as ex:
+            logger.warning(
+                "Failed to initialize logging to directory %s : %s",
+                logdir,
+                str(ex),
+            )
 
 
 def main() -> None:
@@ -1242,6 +1435,11 @@ def main() -> None:
         type=int,
         default=STATS_RECORD_SECONDS_DEFAULT,
     )
+    parser.add_argument(
+        "--logdir",
+        default=None,
+        help="Enables logging to specified directory (default: None)",
+    )
 
     try:
         args = parser.parse_args()
@@ -1251,12 +1449,15 @@ def main() -> None:
         raise Systemctl2MqttConfigException(
             "Cannot start due to bad config data type"
         ) from e
-    log_level = ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "DEBUG"][
-        args.verbosity
-    ]
+
+    configure_logger(main_logger, args.verbosity, args.logdir)
+    configure_logger(events_logger, args.verbosity, args.logdir)
+    configure_logger(stats_logger, args.verbosity, args.logdir)
+
     cfg = Systemctl2MqttConfig(
         {
-            "log_level": log_level,
+            "log_level": args.verbosity,
+            "log_dir": args.logdir,
             "destroyed_service_ttl": args.ttl,
             "homeassistant_prefix": args.homeassistant_prefix,
             "homeassistant_single_device": args.homeassistant_single_device,

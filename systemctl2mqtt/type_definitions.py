@@ -1,7 +1,7 @@
 """Systemctl2mqtt type definitions."""
 
 from datetime import datetime
-from typing import Literal, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 ServiceEventStateType = Literal["on", "off"]
 """Service event state"""
@@ -25,6 +25,8 @@ class Systemctl2MqttConfig(TypedDict):
     ----------
     log_level
         Log verbosity
+    log_dir
+        Log directory
     homeassistant_prefix
         MQTT discovery topic prefix
     homeassistant_single_device
@@ -62,7 +64,8 @@ class Systemctl2MqttConfig(TypedDict):
 
     """
 
-    log_level: str
+    log_level: int
+    log_dir: NotRequired[str]
     homeassistant_prefix: str
     homeassistant_single_device: bool
     systemctl2mqtt_hostname: str
@@ -203,12 +206,18 @@ class ServiceDeviceEntry(TypedDict):
         The name of the device to display in home assistant
     model
         The model of the device as additional info
+    hw_version
+        The hardware version of the device (OS version)
+    sw_version
+        The software version of the device (Systemctl2mqtt version)
 
     """
 
     identifiers: str
     name: str
     model: str
+    hw_version: NotRequired[str]
+    sw_version: NotRequired[str]
 
 
 class ServiceEntry(TypedDict):
