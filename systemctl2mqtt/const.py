@@ -6,7 +6,7 @@ import socket
 
 from .type_definitions import Systemctl2MqttConfig
 
-LOG_LEVEL_DEFAULT = "INFO"
+LOG_LEVEL_DEFAULT = 4
 HOMEASSISTANT_PREFIX_DEFAULT = "homeassistant"
 HOMEASSISTANT_SINGLE_DEVICE_DEFAULT = False
 MQTT_CLIENT_ID_DEFAULT = "systemctl2mqtt"
