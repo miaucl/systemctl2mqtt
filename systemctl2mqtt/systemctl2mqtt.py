@@ -70,6 +70,7 @@ from .type_definitions import (
 main_logger = logging.getLogger("main")
 events_logger = logging.getLogger("events")
 stats_logger = logging.getLogger("stats")
+mqtt_logger = logging.getLogger("mqtt")
 
 
 class Systemctl2Mqtt:
@@ -211,7 +212,7 @@ class Systemctl2Mqtt:
                 callback_api_version=paho.mqtt.enums.CallbackAPIVersion.VERSION2,
                 client_id=f"{self.cfg['mqtt_client_id']}_{uuid.uuid4().hex[:6]}",
             )
-            self.mqtt.enable_logger(main_logger)
+            self.mqtt.enable_logger(mqtt_logger)
             self.mqtt.username_pw_set(
                 username=self.cfg["mqtt_user"], password=self.cfg["mqtt_password"]
             )
@@ -240,7 +241,7 @@ class Systemctl2Mqtt:
         started = False
         try:
             if self.b_events:
-                logging.info("Starting Events thread")
+                main_logger.info("Starting Events thread")
                 self._start_readline_events_thread()
                 started = True
         except Exception as ex:
@@ -250,7 +251,7 @@ class Systemctl2Mqtt:
 
         try:
             if self.b_stats:
-                logging.info("Starting Stats thread")
+                main_logger.info("Starting Stats thread")
                 self._start_readline_stats_thread()
                 started = True
         except Exception as ex:
@@ -591,7 +592,9 @@ class Systemctl2Mqtt:
                         break
                     if line:
                         line_obj = json.loads(line)
-                        if self._filter_service(line_obj["UNIT"]):
+                        if "UNIT" in line_obj["UNIT"] and self._filter_service(
+                            line_obj["UNIT"]
+                        ):
                             if thread_logger.isEnabledFor(logging.DEBUG):
                                 thread_logger.debug(
                                     "Read journalctl event line: %s", line
@@ -1468,6 +1471,7 @@ def main() -> None:
     configure_logger(main_logger, args.verbosity, args.logdir)
     configure_logger(events_logger, args.verbosity, args.logdir)
     configure_logger(stats_logger, args.verbosity, args.logdir)
+    configure_logger(mqtt_logger, args.verbosity, args.logdir)
 
     cfg = Systemctl2MqttConfig(
         {
