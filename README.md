@@ -79,7 +79,19 @@ Data is published to the topic `systemctl/<hostname>/events` using JSON serializ
 
 Data is also published to the topic `systemctl/<hostname>/stats` using JSON serialization. It will arrive every `STATS_RECORD_SECONDS` seconds or so can be inspected in [type_definitions.py](https://github.com/miaucl/systemctl2mqtt/blob/master/systemctl2mqtt/type_definitions.py) or the documentation.
 
-## Home Assistant
+## Discovery
+
+It is possible to enable/disable discovery of the metrics.
+
+`systemctl2mqtt --name Server1 -vvvvv --discovery "<your_discovery>"`
+
+Setting it to an empty list will deactivate discovery, per default homeassistant is active.
+
+`systemctl2mqtt --name Server1 -vvvvv --discovery ""`
+
+### Home Assistant
+
+`systemctl2mqtt --name Server1 -vvvvv --discovery "homeassistant"`
 
 Once `systemctl2mqtt` is collecting data and publishing it to MQTT, it's rather trivial to use the data in Home Assistant.
 

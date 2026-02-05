@@ -27,6 +27,8 @@ class Systemctl2MqttConfig(TypedDict):
         Log verbosity
     log_dir
         Log directory
+    discovery
+        Enable MQTT discovery for Home Assistant and other platforms
     homeassistant_prefix
         MQTT discovery topic prefix
     homeassistant_single_device
@@ -66,6 +68,7 @@ class Systemctl2MqttConfig(TypedDict):
 
     log_level: int
     log_dir: NotRequired[str]
+    discovery: list[str]
     homeassistant_prefix: str
     homeassistant_single_device: bool
     systemctl2mqtt_hostname: str
