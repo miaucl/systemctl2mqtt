@@ -26,6 +26,7 @@ from . import __version__
 from .const import (
     ANSI_ESCAPE,
     DESTROYED_SERVICE_TTL_DEFAULT,
+    DISCOVERY_DEFAULT,
     HOMEASSISTANT_PREFIX_DEFAULT,
     HOMEASSISTANT_SINGLE_DEVICE_DEFAULT,
     INVALID_HA_TOPIC_CHARS,
@@ -105,9 +106,9 @@ class Systemctl2Mqtt:
         The thread to collect stats from systemctl
     systemctl_version
         The systemctl version
-    discovery_binary_sensor_topic
+    homeassistant_discovery_binary_sensor_topic
         Topic template for a binary sensor
-    discovery_sensor_topic
+    homeassistant_discovery_sensor_topic
         Topic template for a nary sensor
     status_topic
         Topic template for a status value
@@ -146,12 +147,13 @@ class Systemctl2Mqtt:
 
     systemctl_version: str
 
-    discovery_binary_sensor_topic: str
-    discovery_sensor_topic: str
     status_topic: str
     version_topic: str
     stats_topic: str
     events_topic: str
+
+    homeassistant_discovery_binary_sensor_topic: str
+    homeassistant_discovery_sensor_topic: str
 
     do_not_exit: bool
 
@@ -171,8 +173,8 @@ class Systemctl2Mqtt:
         self.do_not_exit = do_not_exit
         self.first_connection_event = Event()
 
-        self.discovery_binary_sensor_topic = f"{cfg['homeassistant_prefix']}/binary_sensor/{cfg['mqtt_topic_prefix']}/{cfg['systemctl2mqtt_hostname']}_{{}}/config"
-        self.discovery_sensor_topic = f"{cfg['homeassistant_prefix']}/sensor/{cfg['mqtt_topic_prefix']}/{cfg['systemctl2mqtt_hostname']}_{{}}/config"
+        self.homeassistant_discovery_binary_sensor_topic = f"{cfg['homeassistant_prefix']}/binary_sensor/{cfg['mqtt_topic_prefix']}/{cfg['systemctl2mqtt_hostname']}_{{}}/config"
+        self.homeassistant_discovery_sensor_topic = f"{cfg['homeassistant_prefix']}/sensor/{cfg['mqtt_topic_prefix']}/{cfg['systemctl2mqtt_hostname']}_{{}}/config"
         self.status_topic = (
             f"{cfg['mqtt_topic_prefix']}/{cfg['systemctl2mqtt_hostname']}/status"
         )
@@ -703,24 +705,21 @@ class Systemctl2Mqtt:
                     status_str = service_status["sub"]
                     state_str = "off"
 
-                if self.b_events:
-                    registered_services.append(service)
-                    self._register_service(
-                        {
-                            "name": service,
-                            "description": service_status["description"],
-                            "pid": self._pid_for_service(service),
-                            "cpids": self._child_pids_for_service(service),
-                            "status": status_str,
-                            "state": state_str,
-                        }
-                    )
-                    if service in self.pending_destroy_operations:
-                        del self.pending_destroy_operations[service]
-                        if events_logger.isEnabledFor(logging.DEBUG):
-                            events_logger.debug(
-                                "Removing pending delete for %s.", service
-                            )
+                registered_services.append(service)
+                self._register_service(
+                    {
+                        "name": service,
+                        "description": service_status["description"],
+                        "pid": self._pid_for_service(service),
+                        "cpids": self._child_pids_for_service(service),
+                        "status": status_str,
+                        "state": state_str,
+                    }
+                )
+                if service in self.pending_destroy_operations:
+                    del self.pending_destroy_operations[service]
+                    if events_logger.isEnabledFor(logging.DEBUG):
+                        events_logger.debug("Removing pending delete for %s.", service)
 
         for service in self.known_event_services:
             if (
@@ -828,8 +827,28 @@ class Systemctl2Mqtt:
         self.known_event_services[service] = service_entry
         self._update_pid_index(service)
 
+        discovery_platforms = self.cfg.get("discovery", [])
+        if "homeassistant" in discovery_platforms:
+            self._register_service_form_homeassistant(service_entry)
+
+    def _register_service_form_homeassistant(self, service_entry: ServiceEvent) -> None:
+        """Create discovery topics of service for homeassistant for all entities for home assistant.
+
+        Parameters
+        ----------
+        service_entry : ServiceEvent
+            The service event with the data to register a service
+
+        Raises
+        ------
+        Systemctl2MqttConnectionError
+            If the mqtt client could not send the data
+
+        """
+        service = service_entry["name"]
+
         # Events
-        registration_topic = self.discovery_binary_sensor_topic.format(
+        registration_topic = self.homeassistant_discovery_binary_sensor_topic.format(
             INVALID_HA_TOPIC_CHARS.sub("_", f"{service}_events")
         )
         events_topic = self.events_topic.format(service)
@@ -865,7 +884,7 @@ class Systemctl2Mqtt:
 
         # Stats
         for label, field, device_class, unit, icon in STATS_REGISTRATION_ENTRIES:
-            registration_topic = self.discovery_sensor_topic.format(
+            registration_topic = self.homeassistant_discovery_sensor_topic.format(
                 INVALID_HA_TOPIC_CHARS.sub("_", f"{service}_{field}_stats")
             )
             stats_topic = self.stats_topic.format(service)
@@ -900,6 +919,24 @@ class Systemctl2Mqtt:
             )
 
     def _unregister_service(self, service: str) -> None:
+        """Remove all discovery topics of service.
+
+        Parameters
+        ----------
+        service
+            The container name unregister a service
+
+        Raises
+        ------
+        Systemctl2MqttConnectionError
+            If the mqtt client could not send the data
+
+        """
+        discovery_platforms = self.cfg.get("discovery", [])
+        if "homeassistant" in discovery_platforms:
+            self._unregister_service_for_homeassistant(service)
+
+    def _unregister_service_for_homeassistant(self, service: str) -> None:
         """Remove all discovery topics of service from home assistant.
 
         Parameters
@@ -915,7 +952,7 @@ class Systemctl2Mqtt:
         """
         # Events
         self._mqtt_send(
-            self.discovery_binary_sensor_topic.format(
+            self.homeassistant_discovery_binary_sensor_topic.format(
                 INVALID_HA_TOPIC_CHARS.sub("_", f"{service}_events")
             ),
             "",
@@ -930,7 +967,7 @@ class Systemctl2Mqtt:
         # Stats
         for _, field, _, _, _ in STATS_REGISTRATION_ENTRIES:
             self._mqtt_send(
-                self.discovery_sensor_topic.format(
+                self.homeassistant_discovery_sensor_topic.format(
                     INVALID_HA_TOPIC_CHARS.sub("_", f"{service}_{field}_stats")
                 ),
                 "",
@@ -1448,6 +1485,16 @@ def main() -> None:
         action="store_true",
     )
     parser.add_argument(
+        "--discovery",
+        default=None,
+        help=f"Discovery platforms enabled (default: {DISCOVERY_DEFAULT})",
+        type=str,
+        action="append",
+        nargs="?",
+        const="",
+        metavar="PLATFORM",
+    )
+    parser.add_argument(
         "--interval",
         help=f"The number of seconds to record state and make an average (default: {STATS_RECORD_SECONDS_DEFAULT})",
         type=int,
@@ -1477,6 +1524,7 @@ def main() -> None:
         {
             "log_level": args.verbosity,
             "log_dir": args.logdir,
+            "discovery": args.discovery or DISCOVERY_DEFAULT,
             "destroyed_service_ttl": args.ttl,
             "homeassistant_prefix": args.homeassistant_prefix,
             "homeassistant_single_device": args.homeassistant_single_device,

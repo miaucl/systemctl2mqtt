@@ -7,6 +7,7 @@ import socket
 from .type_definitions import Systemctl2MqttConfig
 
 LOG_LEVEL_DEFAULT = 4
+DISCOVERY_DEFAULT = ["homeassistant"]
 HOMEASSISTANT_PREFIX_DEFAULT = "homeassistant"
 HOMEASSISTANT_SINGLE_DEVICE_DEFAULT = False
 MQTT_CLIENT_ID_DEFAULT = "systemctl2mqtt"
@@ -49,6 +50,7 @@ STATS_REGISTRATION_ENTRIES = [
 DEFAULT_CONFIG = Systemctl2MqttConfig(
     {
         "log_level": LOG_LEVEL_DEFAULT,
+        "discovery": DISCOVERY_DEFAULT,
         "homeassistant_prefix": HOMEASSISTANT_PREFIX_DEFAULT,
         "homeassistant_single_device": HOMEASSISTANT_SINGLE_DEVICE_DEFAULT,
         "systemctl2mqtt_hostname": socket.gethostname(),
