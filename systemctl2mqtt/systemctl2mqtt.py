@@ -2,7 +2,7 @@
 """Listens to systemctl events and stats for services and sends it to mqtt and supports discovery for home assistant."""
 
 import argparse
-import datetime
+import datetime as dt
 import json
 import logging
 from logging.handlers import RotatingFileHandler
@@ -1210,10 +1210,10 @@ class Systemctl2Mqtt:
                         self.last_stat_services[service] = {}
                     if pid not in self.known_stat_services[service]:
                         self.known_stat_services[service][pid] = ServiceStatsRef(
-                            {"last": datetime.datetime(2020, 1, 1)}
+                            {"last": dt.datetime(2020, 1, 1)}
                         )
 
-                    check_date = datetime.datetime.now() - datetime.timedelta(
+                    check_date = dt.datetime.now() - dt.timedelta(
                         seconds=self.cfg["stats_record_seconds"]
                     )
                     pid_date = self.known_stat_services[service][pid]["last"]
@@ -1231,9 +1231,7 @@ class Systemctl2Mqtt:
                     send_mqtt = ppid == pid
 
                     stats_logger.info("Processing %s (%d) stats", service, pid)
-                    self.known_stat_services[service][pid]["last"] = (
-                        datetime.datetime.now()
-                    )
+                    self.known_stat_services[service][pid]["last"] = dt.datetime.now()
                     # delta_seconds = (
                     #     self.known_stat_services[service][pid]["last"] - container_date
                     # ).total_seconds()
